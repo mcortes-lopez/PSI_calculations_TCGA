@@ -167,12 +167,40 @@ names(psi_values)<-paste0(new_genes$gene_symbol, "_", as.character(gene_coord))
 # Generating a single table
 psi_values<-rbindlist(psi_values,use.names = T, idcol = "SYMBOL_COORDINATE", fill = T)
 
-# Filtering and transformation to a matrix format
+# Filtering 
+
 psi_values_w<-psi_values %>% 
   filter(psi>0) %>% 
-  mutate(SYMBOL_COORDINATE_TX=paste0(ifelse(is.na(TXNAME), "",paste0( TXNAME, "-")), SYMBOL_COORDINATE)) %>% 
-  dplyr::select(SYMBOL_COORDINATE_TX, sample_id, psi) %>% 
-  pivot_wider(names_from = sample_id, values_from=psi, values_fill=0)
+  mutate(SYMBOL_COORDINATE_TX=paste0(ifelse(is.na(TXNAME), "",paste0( TXNAME, "-")), SYMBOL_COORDINATE)) 
+
+
+# Adding TCGA IDs in the shape of: TCGA-XX-XX-XX
+
+metadata<-fread("http://snaptron.cs.jhu.edu/data/tcgav2/samples.tsv", header = T) 
+
+ids<-metadata[, c("rail_id", "cgc_sample_id")]
+ids<-ids %>% 
+  mutate(sample_id_red=gsub("[A-Z]$", "", cgc_sample_id)) %>%
+  filter(sample_id_red != "")
+
+# Merge and transform to matrix format
+psi_values_w<-psi_values_w%>% 
+  inner_join(., ids, by= c("sample_id" = "rail_id")) %>%   
+  group_by(sample_id_red, SYMBOL_COORDINATE_TX) %>% 
+  arrange(desc(psi)) %>% # Some ids have more than one sample, so we select the one with a biggest psi
+  slice_head() %>%
+  ungroup()
+
+psi_values_w<-psi_values_w %>% 
+  dplyr::select(SYMBOL_COORDINATE_TX, sample_id_red, psi) %>% 
+  pivot_wider(names_from = sample_id_red, 
+              values_from = psi,
+              values_fill = 0)
+  
+  
+  
+
+
 
 # Saving the results 
 fwrite(psi_values_w, "output/20201209_PSI_table_exons.csv")
