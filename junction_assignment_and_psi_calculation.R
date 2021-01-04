@@ -85,20 +85,20 @@ paired_introns<-lapply(seq_along(proper_ovp), function(exon_idx){
 library(snapcount)
 
 
-# Calculation of PSI based on the SNAPTRON manual and using the recently updated data from TCGA (V2)
-psi_query_calc<-function(ljx, rjx, skipjx, ex_str){
+# Calculation of PSI based on the SNAPTRON manual and using the recently updated data from TCGA (V2)  or GTEx (v2)
+psi_query_calc<-function(ljx, rjx, skipjx, ex_str, dtb){
   print(list(ljx, rjx, skipjx, ex_str))
 
-  lq <- QueryBuilder(compilation="tcgav2", regions=ljx)
+  lq <- QueryBuilder(compilation=dtb, regions=ljx)
       
   lq <- set_row_filters(lq, strand == {{ ex_str }} )
   lq <- set_coordinate_modifier(lq, Coordinates$Exact)
   #right inclusion query
-  rq <- QueryBuilder(compilation="tcgav2", regions=rjx)
+  rq <- QueryBuilder(compilation= dtb, regions=rjx)
   rq <- set_row_filters(rq, strand == {{ ex_str}})
   rq <- set_coordinate_modifier(rq, Coordinates$Exact)
   #exclusion query
-  ex <- QueryBuilder(compilation="tcgav2", regions=skipjx)
+  ex <- QueryBuilder(compilation= dtb, regions=skipjx)
   ex <- set_row_filters(ex, strand == {{ex_str}})
   ex <- set_coordinate_modifier(ex, Coordinates$Exact)
   
@@ -110,8 +110,8 @@ psi_query_calc<-function(ljx, rjx, skipjx, ex_str){
 
 library(GenomicRanges)
 
-# Function to deal with undefined junctions (more than 1 possibilitie downstream/upstream)
-calculate_psi<-function(jxlist){
+# Function to deal with undefined junctions (more than 1 possibility downstream/upstream)
+calculate_psi<-function(jxlist, dtbs){
   exon_str <- as.character(unique(strand(jxlist$upstream)))
   
   upstream_jx <- jxlist[[ifelse(exon_str =="+", 2, 1)]]
@@ -127,7 +127,7 @@ calculate_psi<-function(jxlist){
                     start(GRanges(x)),"-",
                           end(GRanges(downstream_jx)))
         
-      psi_query_calc(x, downstream_jx, sk_jx, exon_str)
+      psi_query_calc(x, downstream_jx, sk_jx, exon_str, dtbs)
     })
     
     psi<-rbindlist(psi, fill=T, idcol = "TXNAME") # Collapse results of possible isoforms
@@ -140,7 +140,7 @@ calculate_psi<-function(jxlist){
                     start(GRanges(upstream_jx)),"-",
                           end(GRanges(x)))
       
-     psi_query_calc(upstream_jx,x,sk_jx, exon_str)
+     psi_query_calc(upstream_jx,x,sk_jx, exon_str, dtbs)
     }) 
      psi<-rbindlist(psi, fill=T, idcol = "TXNAME")
   }
@@ -149,7 +149,7 @@ calculate_psi<-function(jxlist){
                   start(GRanges(upstream_jx)),"-",
                   end(GRanges(downstream_jx)))
     
-    psi<-psi_query_calc(upstream_jx,downstream_jx,sk_jx, exon_str)
+    psi<-psi_query_calc(upstream_jx,downstream_jx,sk_jx, exon_str, dtbs)
     
   }
   
@@ -157,8 +157,12 @@ calculate_psi<-function(jxlist){
     
 }
 
+
+
+# TCGA DATA ------------------------------------------------------------------
 # Apply the function to all the exons
-psi_values<-lapply(paired_introns, calculate_psi)     
+psi_values<-lapply(paired_introns, function(intronpair){
+  calculate_psi(intronpair, "tcgav2")})     
 
 
 # Adding the names as GeneSymbol_coordinate
@@ -198,11 +202,51 @@ psi_values_w<-psi_values_w %>%
               values_fill = 0)
   
   
-  
+# GTExs DATA ------------------------------------------------------------------
+# Apply the function to all the exons
+psi_values<-lapply(paired_introns, function(intronpair){
+  calculate_psi(intronpair, "gtexv2")})     
 
 
+# Adding the names as GeneSymbol_coordinate
+names(psi_values)<-paste0(new_genes$gene_symbol, "_", as.character(gene_coord))
+
+# Generating a single table
+psi_values<-rbindlist(psi_values,use.names = T, idcol = "SYMBOL_COORDINATE", fill = T)
+
+# Filtering 
+
+psi_values_w_gtex<-psi_values %>% 
+  filter(psi>0) %>% 
+  mutate(SYMBOL_COORDINATE_TX=paste0(ifelse(is.na(TXNAME), "",paste0( TXNAME, "-")), SYMBOL_COORDINATE)) 
+
+
+# Adding GTEx IDs in the shape of: TCGA-XX-XX-XX
+
+metadata<-fread("http://snaptron.cs.jhu.edu/data/gtexv2/samples.tsv", header = T) 
+
+ids<-metadata[, c("rail_id", "SAMPID")]
+
+
+# Merge and transform to matrix format
+psi_values_w_gtex<-psi_values_w_gtex%>% 
+  inner_join(., ids, by= c("sample_id" = "rail_id")) %>%   
+  group_by(SAMPID, SYMBOL_COORDINATE_TX) %>% 
+  arrange(desc(psi)) %>% # Some ids have more than one sample, so we select the one with a biggest psi
+  slice_head() %>%
+  ungroup()
+
+psi_values_w_gtex<-psi_values_w_gtex %>% 
+  dplyr::select(SYMBOL_COORDINATE_TX, SAMPID, psi) %>% 
+  pivot_wider(names_from = SAMPID, 
+              values_from = psi,
+              values_fill = 0)
+
+
+# Merge TCGA and GTEx --------------------------------------------
+psi_mtx<-left_join(psi_values_w, psi_values_w_gtex, by="SYMBOL_COORDINATE_TX")
 
 # Saving the results 
-fwrite(psi_values_w, "output/20201209_PSI_table_exons.csv")
+fwrite(psi_mtx, "output/20210104_PSI_table_exons.csv.gz")
 
 
