@@ -164,6 +164,7 @@ calculate_psi <- function(jxlist, dtbs) {
 
 
 
+
 # TCGA DATA ------------------------------------------------------------------
 # Apply the function to all the exons
 psi_values <- lapply(paired_introns, function(intronpair) {
@@ -182,6 +183,33 @@ psi_values <- rbindlist(psi_values, use.names = T, idcol = "SYMBOL_COORDINATE", 
 psi_values_w <- psi_values %>%
   filter(psi > 0) %>%
   mutate(SYMBOL_COORDINATE_TX = paste0(ifelse(is.na(TXNAME), "", paste0(TXNAME, "-")), SYMBOL_COORDINATE))
+
+# Intron coordinates ---------------------------------------------------------
+
+
+names(paired_introns) <- paste0(new_genes$gene_symbol, "_", as.character(gene_coord))
+
+introns_table<-lapply(paired_introns, function(x){
+  event_df <- lapply(x, as.data.frame)
+  event_df <- rbindlist(event_df, use.names = T, idcol = "tx")
+  event_df$tx_name <- unlist(sapply(x, names))
+  return(event_df)
+  }) %>% 
+  rbindlist(., idcol = "exon_id")
+
+
+tx_one<-psi_values_w %>% 
+  filter(is.na(psi_values_w$TXNAME)) %>% 
+  pull(SYMBOL_COORDINATE) %>% 
+  unique()
+
+introns_table %>% 
+  filter(tx_name %in% unique(psi_values_w$TXNAME)  | exon_id %in% tx_one) %>%
+  fwrite("output/intron_information.tab", sep = "\t", quote = F, row.names = F)
+
+
+
+####
 
 
 # Adding TCGA IDs in the shape of: TCGA-XX-XX-XX
