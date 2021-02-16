@@ -203,8 +203,14 @@ tx_one<-psi_values_w %>%
   pull(SYMBOL_COORDINATE) %>% 
   unique()
 
+
+hg38_convert<- data.frame("exon_hg38_coordinate" = as.character(second(proper_ovp)), 
+           "exon_id" = names(paired_introns))
+
+
 introns_table %>% 
   filter(tx_name %in% unique(psi_values_w$TXNAME)  | exon_id %in% tx_one) %>%
+  left_join(., hg38_convert, by = "exon_id") %>% 
   fwrite("output/intron_information.tab", sep = "\t", quote = F, row.names = F)
 
 
