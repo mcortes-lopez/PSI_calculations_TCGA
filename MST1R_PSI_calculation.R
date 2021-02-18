@@ -1,4 +1,4 @@
-# Get MST1R junctions 
+# Get MST1R junctions
 library(snapcount)
 library(dplyr)
 
@@ -6,9 +6,9 @@ library(dplyr)
 # Function from the previous script
 psi_query_calc <- function(ljx, rjx, skipjx, ex_str, dtb) {
   print(list(ljx, rjx, skipjx, ex_str))
-  
+
   lq <- QueryBuilder(compilation = dtb, regions = ljx)
-  
+
   lq <- set_row_filters(lq, strand == {{ ex_str }})
   lq <- set_coordinate_modifier(lq, Coordinates$Exact)
   # right inclusion query
@@ -19,25 +19,25 @@ psi_query_calc <- function(ljx, rjx, skipjx, ex_str, dtb) {
   ex <- QueryBuilder(compilation = dtb, regions = skipjx)
   ex <- set_row_filters(ex, strand == {{ ex_str }})
   ex <- set_coordinate_modifier(ex, Coordinates$Exact)
-  
+
   psi <- tryCatch(
     {
       percent_spliced_in(list(lq), list(rq), list(ex), min_count = 10)
     },
     error = function(e) {}
   )
-  
+
   return(psi)
 }
 
 
-# RON data 
-#exon_id	tx	seqnames	start	end	width	strand	tx_name	exon_hg38_coordinate
-#MST1R_chr3:49895961-49896107:-	upstream	chr3	49895881	49895960	-	ENST00000296474.8	chr3:49895961-49896107:-
-#MST1R_chr3:49895961-49896107:-	downstream	chr3	49896108	49896194	-	ENST00000296474.8	chr3:49895961-49896107:-
+# RON data
+# exon_id	tx	seqnames	start	end	width	strand	tx_name	exon_hg38_coordinate
+# MST1R_chr3:49895961-49896107:-	upstream	chr3	49895881	49895960	-	ENST00000296474.8	chr3:49895961-49896107:-
+# MST1R_chr3:49895961-49896107:-	downstream	chr3	49896108	49896194	-	ENST00000296474.8	chr3:49895961-49896107:-
 
-ron_tcga<-psi_query_calc("chr3:49895881-49895960", "chr3:49896108-49896194", "chr3:49895881-49896194", "-", "tcgav2")
-ron_gtex<-psi_query_calc("chr3:49895881-49895960", "chr3:49896108-49896194", "chr3:49895881-49896194", "-", "gtexv2")
+ron_tcga <- psi_query_calc("chr3:49895881-49895960", "chr3:49896108-49896194", "chr3:49895881-49896194", "-", "tcgav2")
+ron_gtex <- psi_query_calc("chr3:49895881-49895960", "chr3:49896108-49896194", "chr3:49895881-49896194", "-", "gtexv2")
 
 
 
@@ -52,11 +52,11 @@ ids <- ids %>%
   filter(sample_id_red != "")
 
 # Merge and transform to matrix format
-psi_tab<- ron_tcga %>%
-  filter(psi > 0) 
+psi_tab <- ron_tcga %>%
+  filter(psi > 0)
 
 
-psi_tab<- psi_tab %>%
+psi_tab <- psi_tab %>%
   inner_join(., ids, by = c("sample_id" = "rail_id")) %>%
   group_by(sample_id_red) %>%
   arrange(desc(psi)) %>% # Some ids have more than one sample, so we select the one with a biggest psi
@@ -64,25 +64,33 @@ psi_tab<- psi_tab %>%
   ungroup()
 
 
-# Generate a new file for the individual read counts 
+# Generate a new file for the individual read counts
 
-junctions_reads<-psi_tab %>% 
-  dplyr::select(sample_id_red,
-                inclusion_group1_coverage,
-                inclusion_group2_coverage,
-                exclusion_group_coverage) %>% 
-  pivot_longer(cols = c(inclusion_group1_coverage,
-                        inclusion_group2_coverage,
-                        exclusion_group_coverage), 
-               values_to = "junction_reads") %>% 
-  pivot_wider(names_from = sample_id_red, 
-              values_from = junction_reads, 
-              values_fill = 0)
+junctions_reads <- psi_tab %>%
+  dplyr::select(
+    sample_id_red,
+    inclusion_group1_coverage,
+    inclusion_group2_coverage,
+    exclusion_group_coverage
+  ) %>%
+  pivot_longer(
+    cols = c(
+      inclusion_group1_coverage,
+      inclusion_group2_coverage,
+      exclusion_group_coverage
+    ),
+    values_to = "junction_reads"
+  ) %>%
+  pivot_wider(
+    names_from = sample_id_red,
+    values_from = junction_reads,
+    values_fill = 0
+  )
 
 
 # PSI counts
 psi_tab <- psi_tab %>%
-  dplyr::select( sample_id_red, psi) %>%
+  dplyr::select(sample_id_red, psi) %>%
   pivot_wider(
     names_from = sample_id_red,
     values_from = psi,
@@ -100,7 +108,7 @@ ids <- metadata[, c("rail_id", "SAMPID")]
 
 # Merge and transform to matrix format
 psi_gtex <- ron_gtex %>%
-  filter(psi > 0) %>% 
+  filter(psi > 0) %>%
   inner_join(., ids, by = c("sample_id" = "rail_id")) %>%
   group_by(SAMPID) %>%
   arrange(desc(psi)) %>% # Some ids have more than one sample, so we select the one with a biggest psi
@@ -109,18 +117,26 @@ psi_gtex <- ron_gtex %>%
 
 
 
-junctions_reads_gtex<-psi_gtex %>% 
-  dplyr::select(SAMPID,
-                inclusion_group1_coverage,
-                inclusion_group2_coverage,
-                exclusion_group_coverage) %>% 
-  pivot_longer(cols = c(inclusion_group1_coverage,
-                        inclusion_group2_coverage,
-                        exclusion_group_coverage), 
-               values_to = "junction_reads") %>% 
-  pivot_wider(names_from = SAMPID, 
-              values_from = junction_reads, 
-              values_fill = 0)
+junctions_reads_gtex <- psi_gtex %>%
+  dplyr::select(
+    SAMPID,
+    inclusion_group1_coverage,
+    inclusion_group2_coverage,
+    exclusion_group_coverage
+  ) %>%
+  pivot_longer(
+    cols = c(
+      inclusion_group1_coverage,
+      inclusion_group2_coverage,
+      exclusion_group_coverage
+    ),
+    values_to = "junction_reads"
+  ) %>%
+  pivot_wider(
+    names_from = SAMPID,
+    values_from = junction_reads,
+    values_fill = 0
+  )
 
 
 
@@ -135,12 +151,11 @@ psi_values_w_gtex <- psi_gtex %>%
 
 
 # Merge matrices -----------------------------------------------------------------------------------------
-ron_id<-data.frame("SYMBOL_COORDINATE_TX" = "MST1R_chr3:49895961-49896107:-" )
+ron_id <- data.frame("SYMBOL_COORDINATE_TX" = "MST1R_chr3:49895961-49896107:-")
 psi_mtx <- cbind.data.frame(ron_id, psi_tab)
-psi_mtx <- cbind.data.frame(psi_mtx,psi_values_w_gtex)
+psi_mtx <- cbind.data.frame(psi_mtx, psi_values_w_gtex)
 
 jx_mtx <- merge(junctions_reads, junctions_reads_gtex, by = "name")
 
-fwrite(psi_mtx, "output/20210219_PSI_table_MST1R.csv.gz")
-fwrite(jx_mtx, "output/jx_reads/MST1R_chr3:49895961-49896107:-.csv")
-
+# fwrite(psi_mtx, "output/20210219_PSI_table_MST1R.csv.gz")
+# fwrite(jx_mtx, "output/jx_reads/MST1R_chr3:49895961-49896107:-.csv")
